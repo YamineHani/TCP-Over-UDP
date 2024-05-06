@@ -1,4 +1,7 @@
 import socket
+import struct
+
+from checksum import calculate_checksum
 
 # Define server address and ports
 SERVER_IP = "localhost"
@@ -11,8 +14,13 @@ client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # Function to send packet with retransmission
 def send_packet(packet):
     while True:
+        checksum = calculate_checksum(packet)
+
+        # Append checksum to the packet
+        packet_with_checksum = struct.pack("!H", checksum) + packet
+
         # Send packet to server
-        client_socket.sendto(packet, (SERVER_IP, SERVER_PORT))
+        client_socket.sendto(packet_with_checksum, (SERVER_IP, SERVER_PORT))
 
         # Set timeout for receiving ACK
         client_socket.settimeout(TIMEOUT)

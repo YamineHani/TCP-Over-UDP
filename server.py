@@ -1,4 +1,6 @@
 import socket
+import struct
+from checksum import verify_checksum
 
 # Define server address and ports
 SERVER_IP = "localhost"
@@ -25,13 +27,18 @@ if ack_packet == b"ACK":
 # Loop to receive packets from client
 while True:
     # Receive packet from client
-    packet, _ = server_socket.recvfrom(1024)
+    packet_with_checksum, _ = server_socket.recvfrom(1024)
 
-    # Print received packet
-    print("Packet received:", packet.decode())
+    # Verify checksum
+    if verify_checksum(packet_with_checksum):
+        packet = packet_with_checksum[2:]
+        # Print received packet
+        print("Packet received:", packet.decode())
 
-    # Send ACK back to client for each received packet
-    server_socket.sendto(b"ACK", client_address)
+        # Send ACK back to client for each received packet
+        server_socket.sendto(b"ACK", client_address)
+    else:
+        print("Checksum verification failed. Packet dropped.")
 
 # Close socket
 server_socket.close()
