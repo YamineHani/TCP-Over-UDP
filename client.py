@@ -10,8 +10,7 @@ client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # Function to send packet with retransmission
 def send_packet(packet):
-    retries = 0
-    while retries < NUM_RETRIES:
+    while True:
         # Send packet to server
         client_socket.sendto(packet, (SERVER_IP, SERVER_PORT))
 
@@ -28,12 +27,7 @@ def send_packet(packet):
                 return True
         except socket.timeout:
             # Handle timeout (no ACK received)
-            retries += 1
             print("Timeout occurred. Retrying...")
-
-    # If all retries are exhausted and still no ACK received, terminate
-    print("Max retries reached. Exiting...")
-    return False
 
 
 # Handshake
@@ -49,8 +43,6 @@ data = b"Hello, World!"
 PACKET_SIZE = 1024
 # Timeout for receiving ACK
 TIMEOUT = 1  # in seconds
-# Number of retries for packet retransmission
-NUM_RETRIES = 3
 
 # Divide data into packets
 packets = [data[i:i + PACKET_SIZE] for i in range(0, len(data), PACKET_SIZE)]
