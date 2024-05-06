@@ -8,27 +8,33 @@ SERVER_PORT = 12345
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 
-# Function to send packet without retransmission
+# Function to send packet with retransmission
 def send_packet(packet):
-    # Send packet to server
-    client_socket.sendto(packet, (SERVER_IP, SERVER_PORT))
+    retries = 0
+    while retries < NUM_RETRIES:
+        # Send packet to server
+        client_socket.sendto(packet, (SERVER_IP, SERVER_PORT))
 
-    # Wait for ACK from server
-    ack, _ = client_socket.recvfrom(1024)
+        # Set timeout for receiving ACK
+        client_socket.settimeout(TIMEOUT)
 
-    # Check if received ACK matches packet
-    if ack != b"ACK":
-        print("Packet not acknowledged:", packet.decode())
+        try:
+            # Wait for ACK from server
+            ack, _ = client_socket.recvfrom(1024)
 
+            # Check if received ACK matches packet
+            if ack == b"ACK":
+                print("Packet sent successfully:", packet.decode())
+                return True
+        except socket.timeout:
+            # Handle timeout (no ACK received)
+            retries += 1
+            print("Timeout occurred. Retrying...")
 
-# Simulated data to be sent
-data = b"Hello, World!"
+    # If all retries are exhausted and still no ACK received, terminate
+    print("Max retries reached. Exiting...")
+    return False
 
-# Define packet size
-PACKET_SIZE = 1024
-
-# Divide data into packets
-packets = [data[i:i + PACKET_SIZE] for i in range(0, len(data), PACKET_SIZE)]
 
 # Handshake
 client_socket.sendto(b"SYN", (SERVER_IP, SERVER_PORT))
@@ -37,10 +43,22 @@ if syn_ack == b"SYN-ACK":
     client_socket.sendto(b"ACK", (SERVER_IP, SERVER_PORT))
     print("Handshake successful.")
 
+# Simulated data to be sent
+data = b"Hello, World!"
+# Define packet size
+PACKET_SIZE = 1024
+# Timeout for receiving ACK
+TIMEOUT = 1  # in seconds
+# Number of retries for packet retransmission
+NUM_RETRIES = 3
+
+# Divide data into packets
+packets = [data[i:i + PACKET_SIZE] for i in range(0, len(data), PACKET_SIZE)]
+
 # Loop through each packet
 for packet in packets:
-    send_packet(packet)
+    if not send_packet(packet):
+        break
 
 # Close socket
 client_socket.close()
-
