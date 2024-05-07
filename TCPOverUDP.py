@@ -49,14 +49,6 @@ def send_packet(packet, SERVER_IP, SERVER_PORT, client_socket):
 
 # Function to generate a random sequence number
 def generate_sequence_number():
-    return random.randint(1000, 9999)
-
-
-import random
-
-
-# Function to generate a random sequence number
-def generate_sequence_number():
     return random.randint(1000, 9999)  # You can adjust the range as needed
 
 
