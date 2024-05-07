@@ -1,7 +1,5 @@
 import socket
-import struct
-
-from checksum import calculate_checksum
+from TCPOverUDP import send_packet, client_handshake
 
 # Define server address and ports
 SERVER_IP = "localhost"
@@ -11,39 +9,11 @@ SERVER_PORT = 12345
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 
-# Function to send packet with retransmission
-def send_packet(packet):
-    while True:
-        checksum = calculate_checksum(packet)
-
-        # Append checksum to the packet
-        packet_with_checksum = struct.pack("!H", checksum) + packet
-
-        # Send packet to server
-        client_socket.sendto(packet_with_checksum, (SERVER_IP, SERVER_PORT))
-
-        # Set timeout for receiving ACK
-        client_socket.settimeout(TIMEOUT)
-
-        try:
-            # Wait for ACK from server
-            ack, _ = client_socket.recvfrom(1024)
-
-            # Check if received ACK matches packet
-            if ack == b"ACK":
-                print("Packet sent successfully:", packet.decode())
-                return True
-        except socket.timeout:
-            # Handle timeout (no ACK received)
-            print("Timeout occurred. Retrying...")
-
-
-# Handshake
-client_socket.sendto(b"SYN", (SERVER_IP, SERVER_PORT))
-syn_ack, _ = client_socket.recvfrom(1024)
-if syn_ack == b"SYN-ACK":
-    client_socket.sendto(b"ACK", (SERVER_IP, SERVER_PORT))
-    print("Handshake successful.")
+# Perform handshake
+if not client_handshake(client_socket, SERVER_IP, SERVER_PORT):
+    # Exit if handshake fails
+    client_socket.close()
+    exit()
 
 # Simulated data to be sent
 data = b"Hello, World!"
@@ -57,7 +27,7 @@ packets = [data[i:i + PACKET_SIZE] for i in range(0, len(data), PACKET_SIZE)]
 
 # Loop through each packet
 for packet in packets:
-    if not send_packet(packet):
+    if not send_packet(packet, SERVER_IP, SERVER_PORT, client_socket):
         break
 
 # Close socket
