@@ -19,8 +19,6 @@ if not client_handshake(client_socket, SERVER_IP, SERVER_PORT):
 data = b"Hello, World!"
 # Define packet size
 PACKET_SIZE = 1024
-# Timeout for receiving ACK
-TIMEOUT = 1  # in seconds
 
 # Divide data into packets
 packets = [data[i:i + PACKET_SIZE] for i in range(0, len(data), PACKET_SIZE)]
