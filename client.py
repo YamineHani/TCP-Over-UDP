@@ -4,7 +4,7 @@ from TCPOverUDP import send_packet, client_handshake
 # Define server address and ports
 SERVER_IP = "localhost"
 SERVER_PORT = 12345
-
+seq_number = 0
 # Create UDP socket
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -16,17 +16,28 @@ if not client_handshake(client_socket, SERVER_IP, SERVER_PORT):
     exit()
 
 # Simulated data to be sent
-data = b"Hello, World!"
+data_packets = [
+    b"Hello, World!",
+    b"This is another packet.",
+    b"Yet another packet.",
+    # Add more data packets as needed
+]
+
 # Define packet size
 PACKET_SIZE = 1024
 
-# Divide data into packets
-packets = [data[i:i + PACKET_SIZE] for i in range(0, len(data), PACKET_SIZE)]
+# Loop through each data packet
+for data in data_packets:
+    # Divide data into packets
+    packets = [data[i:i + PACKET_SIZE] for i in range(0, len(data), PACKET_SIZE)]
 
-# Loop through each packet
-for packet in packets:
-    if not send_packet(packet, SERVER_IP, SERVER_PORT, client_socket):
-        break
+    # Loop through each packet
+    for packet in packets:
+        # Send packet with sequence number and receive ACK
+        seq_number = send_packet(packet, SERVER_IP, SERVER_PORT, client_socket, seq_number)
+        if seq_number is None:
+            # Exit loop if sending fails
+            break
 
 # Close socket
 client_socket.close()

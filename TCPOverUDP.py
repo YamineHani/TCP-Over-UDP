@@ -26,27 +26,6 @@ def verify_checksum(packet_with_checksum):
     return checksum == calculated_checksum
 
 
-def send_packet(packet, SERVER_IP, SERVER_PORT, client_socket):
-    while True:
-        checksum = calculate_checksum(packet)
-        # Append checksum to the packet
-        packet_with_checksum = struct.pack("!H", checksum) + packet
-        # Send packet to server
-        client_socket.sendto(packet_with_checksum, (SERVER_IP, SERVER_PORT))
-        # Set timeout for receiving ACK
-        client_socket.settimeout(TIMEOUT)
-        try:
-            # Wait for ACK from server
-            ack, _ = client_socket.recvfrom(1024)
-            # Check if received ACK matches packet
-            if ack == b"ACK":
-                print("Packet sent successfully:", packet.decode())
-                return True
-        except socket.timeout:
-            # Handle timeout (no ACK received)
-            print("Timeout occurred. Retrying...")
-
-
 # Function to generate a random sequence number
 def generate_sequence_number():
     return random.randint(1000, 9999)  # You can adjust the range as needed
@@ -104,18 +83,75 @@ def server_handshake(server_socket):
     return False
 
 
-def receive_packets(server_socket):
+# TODO: ADD SEQ AND ACK NUMBERS
+# Use 2 sequence numbers 1 and 0:
+# 1. Sender start by sending packet with sequence number 0
+# 2. Sender waits for ACK0 from receiver
+# 3. If ACK1 received instead of ACK0 || packet corrupted just wait for timeout and resend packet
+# 4. If ACK0 received, send next packet with sequence number 1
+# 5. Repeat
+def send_packet(packet, server_ip, server_port, client_socket, seq_number):
+    while True:
+        # Append sequence number to the packet
+        packet_with_seq_num = struct.pack("!B", seq_number) + packet
+        # Calculate checksum on the entire packet
+        checksum = calculate_checksum(packet_with_seq_num)
+        # Append checksum to the packet
+        packet_with_metadata = struct.pack("!H", checksum) + packet_with_seq_num
+        # Send packet to server
+        client_socket.sendto(packet_with_metadata, (server_ip, server_port))
+        # Set timeout for receiving ACK
+        client_socket.settimeout(TIMEOUT)
+        try:
+            # Wait for ACK from server
+            ack_packet_with_checksum, _ = client_socket.recvfrom(1024)
+            # Verify checksum of the ACK packet
+            ack_checksum = struct.unpack("!H", ack_packet_with_checksum[:2])[0]
+            ack_packet = ack_packet_with_checksum[2:]
+            if calculate_checksum(ack_packet) == ack_checksum:
+                # Extract sequence number from ACK packet
+                ack_seq_number = struct.unpack("!B", ack_packet[:1])[0]
+                print("ack number: ", ack_seq_number)
+                # Check if received ACK matches the sequence number of the sent packet
+                if ack_seq_number == seq_number:
+                    print("Packet sent successfully:", packet.decode())
+                    # Toggle sequence number for next packet
+                    return 1 - seq_number
+        except socket.timeout:
+            # Handle timeout (no ACK received)
+            print("Timeout occurred. Retrying...")
+
+
+def receive_packets(server_socket, expected_seq_number):
     while True:
         # Receive packet from client
-        packet_with_checksum, client_address = server_socket.recvfrom(1024)
-
+        packet_with_metadata, client_address = server_socket.recvfrom(1024)
+        # Extract sequence number from received packet
+        recv_seq_number = struct.unpack("!B", packet_with_metadata[2:3])[0]
+        print("received seq num: ", recv_seq_number)
         # Verify checksum
-        if verify_checksum(packet_with_checksum):
-            packet = packet_with_checksum[2:]
-            # Print received packet
-            print("Packet received:", packet.decode())
-
-            # Send ACK back to client for each received packet
-            server_socket.sendto(b"ACK", client_address)
+        if verify_checksum(packet_with_metadata):
+            # Check if received packet is the expected packet
+            if recv_seq_number == expected_seq_number:
+                packet = packet_with_metadata[3:]
+                # Print received packet
+                print("Packet received:", packet.decode())
+                # Send ACK back to client along with the sequence number
+                ack_packet = struct.pack("!B", recv_seq_number)
+                # Calculate checksum for ACK packet
+                ack_checksum = calculate_checksum(ack_packet)
+                # Append checksum to the ACK packet
+                ack_packet_with_checksum = struct.pack("!H", ack_checksum) + ack_packet
+                # Send ACK back to client for each received packet
+                server_socket.sendto(ack_packet_with_checksum, client_address)
+                # Toggle expected sequence number for next packet
+                expected_seq_number = 1 - expected_seq_number
+            else:
+                # Duplicate packet or out-of-order packet, discard and request retransmission
+                print("Out-of-order or duplicate packet received. Discarding...")
         else:
-            print("Checksum verification failed. Packet dropped.")
+            # Checksum verification failed, request retransmission
+            print("Checksum verification failed. Packet dropped. Requesting retransmission...")
+
+
+
