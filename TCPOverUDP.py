@@ -83,7 +83,6 @@ def server_handshake(server_socket):
     return False
 
 
-# TODO: ADD SEQ AND ACK NUMBERS
 # Use 2 sequence numbers 1 and 0:
 # 1. Sender start by sending packet with sequence number 0
 # 2. Sender waits for ACK0 from receiver
