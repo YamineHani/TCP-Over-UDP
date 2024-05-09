@@ -130,10 +130,9 @@ def receive_packets(server_socket, expected_seq_number):
         recv_seq_number = struct.unpack("!B", packet_with_metadata[2:3])[0]
         print("received seq num: ", recv_seq_number)
 
-        # TODO: Handle FIN
+        # Check if the packet is a FIN packet
         packet = packet_with_metadata[1:]
         fin_seq_number = packet_with_metadata[:1][0]
-        # Check if the packet is a FIN packet
         if packet == b"FIN":
             print("Received FIN packet from client with sequence: ", fin_seq_number)
             # Process the FIN packet (e.g., initiate connection termination)
@@ -178,11 +177,17 @@ def send_fin(client_socket, server_ip, server_port, seq_number):
 
     # Wait for ACK from server
     while True:
-        acknowledgment, _ = client_socket.recvfrom(1024)
-        ack_seq_number = struct.unpack("!B", acknowledgment[:1])[0]
-        if acknowledgment[1:] == b"ACK" and ack_seq_number == seq_number + 1:
-            print("Client: ACK received from server for FIN with sequence number:", ack_seq_number)
-            break
+        try:
+            client_socket.settimeout(TIMEOUT)
+            acknowledgment, _ = client_socket.recvfrom(1024)
+            ack_seq_number = struct.unpack("!B", acknowledgment[:1])[0]
+            if acknowledgment[1:] == b"ACK" and ack_seq_number == seq_number + 1:
+                print("Client: ACK received from server for FIN with sequence number:", ack_seq_number)
+                break
+        except socket.timeout:
+            print("Client: Timeout occurred while waiting for ACK from server. Retrying...")
+            client_socket.sendto(fin_packet, (server_ip, server_port))
+            print("Client: FIN sent to server with sequence number:", seq_number)
 
     # Wait for FIN from server
     while True:
@@ -192,7 +197,7 @@ def send_fin(client_socket, server_ip, server_port, seq_number):
             print("Client: FIN received from server with sequence number:", server_seq_number)
 
             # Send ACK to acknowledge FIN from server
-            ack_packet =  struct.pack("!B", server_seq_number + 1) + b"ACK"
+            ack_packet = struct.pack("!B", server_seq_number + 1) + b"ACK"
             client_socket.sendto(ack_packet, (server_ip, server_port))
             print("Client: ACK sent to server for FIN with sequence number:", server_seq_number + 1)
             break
@@ -214,12 +219,23 @@ def handle_fin(server_socket, seq_number, client_address):
     print("Server: FIN sent to client with sequence number:", server_seq_number)
 
     # Wait for ACK from client for server's FIN
+    # TODO: HANDLE IF CLIENT CLOSED CONNECTION AND SERVER STILL WAITING FOR ACK
     while True:
-        acknowledgment, _ = server_socket.recvfrom(1024)
-        ack_seq_number = struct.unpack("!B", acknowledgment[:1])[0]
-        if acknowledgment[1:] == b"ACK" and ack_seq_number == server_seq_number + 1:
-            print("Server: FIN ACK received from client for server's FIN with sequence number:", ack_seq_number)
-            break
+        try:
+            server_socket.settimeout(TIMEOUT)
+            acknowledgment, _ = server_socket.recvfrom(1024)
+            ack_seq_number = struct.unpack("!B", acknowledgment[:1])[0]
+            if acknowledgment[1:] == b"ACK" and ack_seq_number == server_seq_number + 1:
+                print("Server: FIN ACK received from client for server's FIN with sequence number:", ack_seq_number)
+                break
+            if acknowledgment[1:] == b"FIN":
+                server_socket.sendto(ack_packet, client_address)
+                print("Server: ACK sent to client with acknowledgment number:", seq_number + 1)
+        except socket.timeout:
+            print("Server: Timeout occurred while waiting for ACK from client. Retrying...")
+            # Resend FIN packet
+            server_socket.sendto(fin_packet, client_address)
+            print("Server: FIN resent to client with sequence number:", server_seq_number)
 
     # Close socket
     server_socket.close()

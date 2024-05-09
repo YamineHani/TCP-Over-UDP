@@ -41,4 +41,4 @@ for data in data_packets:
 
 # Close socket
 send_fin(client_socket, SERVER_IP, SERVER_PORT, seq_number)
-#client_socket.close()
+
