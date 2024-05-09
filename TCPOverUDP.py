@@ -28,7 +28,7 @@ def verify_checksum(packet_with_checksum):
 
 # Function to generate a random sequence number
 def generate_sequence_number():
-    return random.randint(1000, 9999)  # You can adjust the range as needed
+    return random.randint(0, 255)  # You can adjust the range as needed
 
 
 # 3 way handshake:
@@ -129,6 +129,17 @@ def receive_packets(server_socket, expected_seq_number):
         # Extract sequence number from received packet
         recv_seq_number = struct.unpack("!B", packet_with_metadata[2:3])[0]
         print("received seq num: ", recv_seq_number)
+
+        # TODO: Handle FIN
+        packet = packet_with_metadata[1:]
+        fin_seq_number = packet_with_metadata[:1][0]
+        # Check if the packet is a FIN packet
+        if packet == b"FIN":
+            print("Received FIN packet from client with sequence: ", fin_seq_number)
+            # Process the FIN packet (e.g., initiate connection termination)
+            handle_fin(server_socket, fin_seq_number, client_address)
+            return  # Exit the loop after handling the FIN packet
+
         # Verify checksum
         if verify_checksum(packet_with_metadata):
             # Check if received packet is the expected packet
@@ -152,6 +163,66 @@ def receive_packets(server_socket, expected_seq_number):
         else:
             # Checksum verification failed, request retransmission
             print("Checksum verification failed. Packet dropped. Requesting retransmission...")
+
+
+# 1. client sends FIN and seq number = x
+# 2. server replies with ack and ack number = x+1
+# 3. then server sends FIN and seq num = y
+# 4. clients replies with ACK and ack number = y+1
+# 5. and both closes connection
+def send_fin(client_socket, server_ip, server_port, seq_number):
+    # Send FIN segment with sequence number
+    fin_packet = struct.pack("!B", seq_number) + b"FIN"
+    client_socket.sendto(fin_packet, (server_ip, server_port))
+    print("Client: FIN sent to server with sequence number:", seq_number)
+
+    # Wait for ACK from server
+    while True:
+        acknowledgment, _ = client_socket.recvfrom(1024)
+        ack_seq_number = struct.unpack("!B", acknowledgment[:1])[0]
+        if acknowledgment[1:] == b"ACK" and ack_seq_number == seq_number + 1:
+            print("Client: ACK received from server for FIN with sequence number:", ack_seq_number)
+            break
+
+    # Wait for FIN from server
+    while True:
+        fin_packet, _ = client_socket.recvfrom(1024)
+        server_seq_number = struct.unpack("!B", fin_packet[:1])[0]
+        if fin_packet[1:] == b"FIN":
+            print("Client: FIN received from server with sequence number:", server_seq_number)
+
+            # Send ACK to acknowledge FIN from server
+            ack_packet =  struct.pack("!B", server_seq_number + 1) + b"ACK"
+            client_socket.sendto(ack_packet, (server_ip, server_port))
+            print("Client: ACK sent to server for FIN with sequence number:", server_seq_number + 1)
+            break
+
+    # Close socket
+    client_socket.close()
+
+
+def handle_fin(server_socket, seq_number, client_address):
+    # Send ACK with acknowledgment number = sequence number + 1
+    ack_packet = struct.pack("!B", seq_number + 1) + b"ACK"
+    server_socket.sendto(ack_packet, client_address)
+    print("Server: ACK sent to client with acknowledgment number:", seq_number + 1)
+
+    server_seq_number = generate_sequence_number()
+    # Send FIN segment with sequence number + 1
+    fin_packet = struct.pack("!B", server_seq_number) + b"FIN"
+    server_socket.sendto(fin_packet, client_address)
+    print("Server: FIN sent to client with sequence number:", server_seq_number)
+
+    # Wait for ACK from client for server's FIN
+    while True:
+        acknowledgment, _ = server_socket.recvfrom(1024)
+        ack_seq_number = struct.unpack("!B", acknowledgment[:1])[0]
+        if acknowledgment[1:] == b"ACK" and ack_seq_number == server_seq_number + 1:
+            print("Server: FIN ACK received from client for server's FIN with sequence number:", ack_seq_number)
+            break
+
+    # Close socket
+    server_socket.close()
 
 
 

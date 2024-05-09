@@ -1,5 +1,5 @@
 import socket
-from TCPOverUDP import send_packet, client_handshake
+from TCPOverUDP import send_packet, client_handshake, generate_sequence_number, send_fin
 
 # Define server address and ports
 SERVER_IP = "localhost"
@@ -40,4 +40,5 @@ for data in data_packets:
             break
 
 # Close socket
-client_socket.close()
+send_fin(client_socket, SERVER_IP, SERVER_PORT, seq_number)
+#client_socket.close()

@@ -10,9 +10,6 @@ server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_socket.bind((SERVER_IP, SERVER_PORT))
 
 
-try:
-    if server_handshake(server_socket):
-        receive_packets(server_socket, expected_seq_number)
-finally:
-    # Close socket
-    server_socket.close()
+if server_handshake(server_socket):
+    receive_packets(server_socket, expected_seq_number)
+
