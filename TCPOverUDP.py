@@ -134,16 +134,6 @@ def receive_packets(server_socket, expected_seq_number):
             # Receive packet from client
             packet_with_metadata, client_address = server_socket.recvfrom(1024)
 
-            if corrupt_packet():
-                # Corrupt a random byte in the packet
-                index = random.randint(0, len(packet_with_metadata) - 1)
-                packet_with_metadata = packet_with_metadata[:index] + bytes(
-                    [random.randint(0, 255)]) + packet_with_metadata[index + 1:]
-                print("Packet corrupted.")
-
-            # Extract sequence number from received packet
-            recv_seq_number = struct.unpack("!B", packet_with_metadata[2:3])[0]
-
             # Check if the packet is a FIN packet
             packet = packet_with_metadata[1:]
             fin_seq_number = packet_with_metadata[:1][0]
@@ -153,6 +143,15 @@ def receive_packets(server_socket, expected_seq_number):
                 handle_fin(server_socket, fin_seq_number, client_address)
                 return  # Exit the loop after handling the FIN packet
 
+            if corrupt_packet():
+                # Corrupt a random byte in the packet
+                index = random.randint(0, len(packet_with_metadata) - 1)
+                packet_with_metadata = packet_with_metadata[:index] + bytes(
+                    [random.randint(0, 255)]) + packet_with_metadata[index + 1:]
+                print("Packet corrupted.")
+
+            # Extract sequence number from received packet
+            recv_seq_number = struct.unpack("!B", packet_with_metadata[2:3])[0]
 
             # Verify checksum
             if verify_checksum(packet_with_metadata):
@@ -183,8 +182,10 @@ def receive_packets(server_socket, expected_seq_number):
 def lose_packet():
     return random.random() < PACKET_LOSS_PROBABILITY
 
+
 def corrupt_packet():
     return random.random() < PACKET_CORRUPTION_PROBABILITY
+
 
 # 1. client sends FIN and seq number = x
 # 2. server replies with ack and ack number = x+1
