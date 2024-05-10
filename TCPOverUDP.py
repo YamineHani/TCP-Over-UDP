@@ -1,11 +1,15 @@
 import random
 import struct
 import socket
+import os
 
 # Timeout for receiving ACK
 TIMEOUT = 1  # in seconds
 # Define packet size
 PACKET_SIZE = 1024
+# Define packet loss and corruption probabilities
+PACKET_LOSS_PROBABILITY = 0.02  # 2% packet loss
+PACKET_CORRUPTION_PROBABILITY = 0.1  # 10% corruption
 
 
 def calculate_checksum(data):
@@ -37,10 +41,11 @@ def generate_sequence_number():
 # and generate random sequence number and send it y
 # 3. client send ack number = y + 1
 # and check for equalities
-def client_handshake(client_socket, SERVER_IP, SERVER_PORT):
+# TODO: ADD TIMEOUT IN HANDSHAKE TO HANDLE PACKET LOSS
+def client_handshake(client_socket, server_ip, server_port):
     # Step 1: Send SYN with sequence number
     seq_number = generate_sequence_number()  # x
-    client_socket.sendto(f"SYN:{seq_number}".encode(), (SERVER_IP, SERVER_PORT))
+    client_socket.sendto(f"SYN:{seq_number}".encode(), (server_ip, server_port))
 
     # Step 2: Receive SYN-ACK from server with server's sequence number
     syn_ack_packet, _ = client_socket.recvfrom(1024)
@@ -51,7 +56,7 @@ def client_handshake(client_socket, SERVER_IP, SERVER_PORT):
 
         if server_ack_number == seq_number + 1:
             # Step 3: Send ACK with client's sequence and acknowledgment numbers
-            client_socket.sendto(f"ACK:{server_seq_number + 1}".encode(), (SERVER_IP, SERVER_PORT))
+            client_socket.sendto(f"ACK:{server_seq_number + 1}".encode(), (server_ip, server_port))
             print("Handshake successful.")
             return True
     print("Handshake failed.")
@@ -123,45 +128,63 @@ def send_packet(packet, server_ip, server_port, client_socket, seq_number):
 
 def receive_packets(server_socket, expected_seq_number):
     while True:
-        # Receive packet from client
-        packet_with_metadata, client_address = server_socket.recvfrom(1024)
-        # Extract sequence number from received packet
-        recv_seq_number = struct.unpack("!B", packet_with_metadata[2:3])[0]
-        print("received seq num: ", recv_seq_number)
-
-        # Check if the packet is a FIN packet
-        packet = packet_with_metadata[1:]
-        fin_seq_number = packet_with_metadata[:1][0]
-        if packet == b"FIN":
-            print("Received FIN packet from client with sequence: ", fin_seq_number)
-            # Process the FIN packet (e.g., initiate connection termination)
-            handle_fin(server_socket, fin_seq_number, client_address)
-            return  # Exit the loop after handling the FIN packet
-
-        # Verify checksum
-        if verify_checksum(packet_with_metadata):
-            # Check if received packet is the expected packet
-            if recv_seq_number == expected_seq_number:
-                packet = packet_with_metadata[3:]
-                # Print received packet
-                print("Packet received:", packet.decode())
-                # Send ACK back to client along with the sequence number
-                ack_packet = struct.pack("!B", recv_seq_number)
-                # Calculate checksum for ACK packet
-                ack_checksum = calculate_checksum(ack_packet)
-                # Append checksum to the ACK packet
-                ack_packet_with_checksum = struct.pack("!H", ack_checksum) + ack_packet
-                # Send ACK back to client for each received packet
-                server_socket.sendto(ack_packet_with_checksum, client_address)
-                # Toggle expected sequence number for next packet
-                expected_seq_number = 1 - expected_seq_number
-            else:
-                # Duplicate packet or out-of-order packet, discard and request retransmission
-                print("Out-of-order or duplicate packet received. Discarding...")
+        if lose_packet():
+            print("Packet lost.")
         else:
-            # Checksum verification failed, request retransmission
-            print("Checksum verification failed. Packet dropped. Requesting retransmission...")
+            # Receive packet from client
+            packet_with_metadata, client_address = server_socket.recvfrom(1024)
 
+            if corrupt_packet():
+                # Corrupt a random byte in the packet
+                index = random.randint(0, len(packet_with_metadata) - 1)
+                packet_with_metadata = packet_with_metadata[:index] + bytes(
+                    [random.randint(0, 255)]) + packet_with_metadata[index + 1:]
+                print("Packet corrupted.")
+
+            # Extract sequence number from received packet
+            recv_seq_number = struct.unpack("!B", packet_with_metadata[2:3])[0]
+
+            # Check if the packet is a FIN packet
+            packet = packet_with_metadata[1:]
+            fin_seq_number = packet_with_metadata[:1][0]
+            if packet == b"FIN":
+                print("Received FIN packet from client with sequence: ", fin_seq_number)
+                # Process the FIN packet (e.g., initiate connection termination)
+                handle_fin(server_socket, fin_seq_number, client_address)
+                return  # Exit the loop after handling the FIN packet
+
+
+            # Verify checksum
+            if verify_checksum(packet_with_metadata):
+                # Check if received packet is the expected packet
+                if recv_seq_number == expected_seq_number:
+                    packet = packet_with_metadata[3:]
+                    # Print received packet
+                    print("received seq num: ", recv_seq_number)
+                    print("Packet received:", packet.decode())
+                    # Send ACK back to client along with the sequence number
+                    ack_packet = struct.pack("!B", recv_seq_number)
+                    # Calculate checksum for ACK packet
+                    ack_checksum = calculate_checksum(ack_packet)
+                    # Append checksum to the ACK packet
+                    ack_packet_with_checksum = struct.pack("!H", ack_checksum) + ack_packet
+                    # Send ACK back to client for each received packet
+                    server_socket.sendto(ack_packet_with_checksum, client_address)
+                    # Toggle expected sequence number for next packet
+                    expected_seq_number = 1 - expected_seq_number
+                else:
+                    # Duplicate packet or out-of-order packet, discard and request retransmission
+                    print("Out-of-order or duplicate packet received. Discarding...")
+            else:
+                # Checksum verification failed, request retransmission
+                print("Checksum verification failed. Packet dropped. Requesting retransmission...")
+
+
+def lose_packet():
+    return random.random() < PACKET_LOSS_PROBABILITY
+
+def corrupt_packet():
+    return random.random() < PACKET_CORRUPTION_PROBABILITY
 
 # 1. client sends FIN and seq number = x
 # 2. server replies with ack and ack number = x+1
@@ -240,4 +263,20 @@ def handle_fin(server_socket, seq_number, client_address):
     server_socket.close()
 
 
+# Function to handle HTTP GET requests
+def handle_get_request(request_url):
+    if os.path.exists(request_url):
+        with open(request_url, "rb") as file:
+            file_content = file.read()
+        return b"OK", file_content
+    else:
+        return b"NOTFOUND", b"Requested resource not found."
+
+
+# Function to handle HTTP POST requests
+def handle_post_request(request_url, payload):
+    # Process the payload --> save to a file
+    with open(request_url, "wb") as file:
+        file.write(payload)
+    return b"OK", b"Resource created successfully."
 
