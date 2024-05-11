@@ -20,6 +20,8 @@ data_packets = [
     b"Hello, World!",
     b"This is another packet.",
     b"Yet another packet.",
+    b"POST Yasmine hani",
+    b"GET 100"
     # Add more data packets as needed
 ]
 
@@ -39,6 +41,5 @@ for data in data_packets:
             # Exit loop if sending fails
             break
 
-# Close socket
 send_fin(client_socket, SERVER_IP, SERVER_PORT, seq_number)
 

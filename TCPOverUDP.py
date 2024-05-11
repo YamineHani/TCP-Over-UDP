@@ -1,7 +1,9 @@
 import random
 import struct
 import socket
-import os
+import time
+
+from database import handle_get_request, handle_post_request
 
 # Timeout for receiving ACK
 TIMEOUT = 1  # in seconds
@@ -96,6 +98,14 @@ def server_handshake(server_socket):
 # 5. Repeat
 def send_packet(packet, server_ip, server_port, client_socket, seq_number):
     while True:
+        if packet.startswith(b"GET"):
+            id = ''.join(packet.split(b' ')[1].decode())
+            packet = get_request(id)
+        elif packet.startswith(b"POST"):
+            unpack_post = packet.split(b' ')[1:]
+            name = ' '.join(item.decode() for item in unpack_post)
+            packet = post_request(name)
+
         # Append sequence number to the packet
         packet_with_seq_num = struct.pack("!B", seq_number) + packet
         # Calculate checksum on the entire packet
@@ -119,6 +129,11 @@ def send_packet(packet, server_ip, server_port, client_socket, seq_number):
                 # Check if received ACK matches the sequence number of the sent packet
                 if ack_seq_number == seq_number:
                     print("Packet sent successfully:", packet.decode())
+
+                    response_content = ack_packet[1:]
+                    if len(response_content) != 0:
+                        print("Response from server:", response_content.decode())
+
                     # Toggle sequence number for next packet
                     return 1 - seq_number
         except socket.timeout:
@@ -161,8 +176,18 @@ def receive_packets(server_socket, expected_seq_number):
                     # Print received packet
                     print("received seq num: ", recv_seq_number)
                     print("Packet received:", packet.decode())
+
                     # Send ACK back to client along with the sequence number
                     ack_packet = struct.pack("!B", recv_seq_number)
+
+                    # Check if packet is HTTP request
+                    if packet.startswith(b"GET"):
+                        response = handle_get_request(packet)
+                        ack_packet += response
+                    elif packet.startswith(b"POST"):
+                        response = handle_post_request(packet)
+                        ack_packet += response
+
                     # Calculate checksum for ACK packet
                     ack_checksum = calculate_checksum(ack_packet)
                     # Append checksum to the ACK packet
@@ -264,20 +289,14 @@ def handle_fin(server_socket, seq_number, client_address):
     server_socket.close()
 
 
-# Function to handle HTTP GET requests
-def handle_get_request(request_url):
-    if os.path.exists(request_url):
-        with open(request_url, "rb") as file:
-            file_content = file.read()
-        return b"OK", file_content
-    else:
-        return b"NOTFOUND", b"Requested resource not found."
+def get_request(student_id):
+    http_request = f"GET /student/{student_id} HTTP/1.0\r\n\r\n"
+    return http_request.encode()
 
 
-# Function to handle HTTP POST requests
-def handle_post_request(request_url, payload):
-    # Process the payload --> save to a file
-    with open(request_url, "wb") as file:
-        file.write(payload)
-    return b"OK", b"Resource created successfully."
+def post_request(student_name):
+    http_request = f"POST /student HTTP/1.0\r\nContent-Length: {len(student_name)}\r\n\r\n{student_name}"
+    return http_request.encode()
+
+
 
