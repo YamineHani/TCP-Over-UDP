@@ -1,7 +1,6 @@
 import random
 import struct
 import socket
-import time
 
 from database import handle_get_request, handle_post_request
 
@@ -45,24 +44,29 @@ def generate_sequence_number():
 # and check for equalities
 # TODO: ADD TIMEOUT IN HANDSHAKE TO HANDLE PACKET LOSS
 def client_handshake(client_socket, server_ip, server_port):
-    # Step 1: Send SYN with sequence number
-    seq_number = generate_sequence_number()  # x
-    client_socket.sendto(f"SYN:{seq_number}".encode(), (server_ip, server_port))
+    while True:
+        # Step 1: Send SYN with sequence number
+        seq_number = generate_sequence_number()  # x
+        client_socket.sendto(f"SYN:{seq_number}".encode(), (server_ip, server_port))
+        # Set timeout for receiving SYN-ACK packet
+        client_socket.settimeout(TIMEOUT)
 
-    # Step 2: Receive SYN-ACK from server with server's sequence number
-    syn_ack_packet, _ = client_socket.recvfrom(1024)
-    if syn_ack_packet.startswith(b"SYN-ACK"):
-        syn_ack_info = syn_ack_packet.decode().split(":")[1:]
-        server_seq_number = int(syn_ack_info[0]) # y
-        server_ack_number = int(syn_ack_info[1]) # x + 1
+        try:
+            # Step 2: Receive SYN-ACK from server with server's sequence number
+            syn_ack_packet, _ = client_socket.recvfrom(1024)
+            if syn_ack_packet.startswith(b"SYN-ACK"):
+                syn_ack_info = syn_ack_packet.decode().split(":")[1:]
+                server_seq_number = int(syn_ack_info[0])  # y
+                server_ack_number = int(syn_ack_info[1])  # x + 1
 
-        if server_ack_number == seq_number + 1:
-            # Step 3: Send ACK with client's sequence and acknowledgment numbers
-            client_socket.sendto(f"ACK:{server_seq_number + 1}".encode(), (server_ip, server_port))
-            print("Handshake successful.")
-            return True
-    print("Handshake failed.")
-    return False
+                if server_ack_number == seq_number + 1:
+                    # Step 3: Send ACK with client's sequence and acknowledgment numbers
+                    client_socket.sendto(f"ACK:{server_seq_number + 1}".encode(), (server_ip, server_port))
+                    print("Handshake successful.")
+                    return True
+        except socket.timeout:
+            print("Timeout occurred while waiting for SYN-ACK.")
+            client_socket.sendto(f"SYN:{seq_number}".encode(), (server_ip, server_port))
 
 
 def server_handshake(server_socket):
@@ -267,7 +271,6 @@ def handle_fin(server_socket, seq_number, client_address):
     print("Server: FIN sent to client with sequence number:", server_seq_number)
 
     # Wait for ACK from client for server's FIN
-    # TODO: HANDLE IF CLIENT CLOSED CONNECTION AND SERVER STILL WAITING FOR ACK
     while True:
         try:
             server_socket.settimeout(TIMEOUT)
